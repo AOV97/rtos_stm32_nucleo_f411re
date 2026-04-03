@@ -20,12 +20,14 @@ Cortex-M4 SysTick and PendSV exceptions.
 ## Requirements
 
 - `arm-none-eabi-gcc` — ARM cross-compiler
+- `cmake` — build system (3.20+)
+- `make` — build tool
 - `openocd` — on-chip debugger
 - `stlink-tools` — ST-Link utilities
 - `gdb-multiarch` — debugger
 
 ```bash
-sudo apt install gcc-arm-none-eabi openocd stlink-tools gdb-multiarch
+sudo apt install gcc-arm-none-eabi cmake make openocd stlink-tools gdb-multiarch
 ```
 
 ---
@@ -33,8 +35,9 @@ sudo apt install gcc-arm-none-eabi openocd stlink-tools gdb-multiarch
 ## Build
 
 ```bash
-make        # compile and link → build/final.elf
-make clean  # remove build directory
+mkdir build && cd build
+cmake ..
+make -j$(nproc)          # produces build/firmware.elf
 ```
 
 ---
@@ -48,7 +51,7 @@ make load
 
 **Terminal 2 — connect GDB, flash, and run:**
 ```bash
-gdb-multiarch build/final.elf
+gdb-multiarch build/firmware.elf
 (gdb) target extended-remote localhost:3333
 (gdb) monitor reset halt
 (gdb) load
@@ -78,13 +81,25 @@ continue                          # resume
 
 ```
 workspace/
-├── main.c              # FreeRTOS tasks and application entry point
-├── led.c / led.h       # GPIO driver for onboard LEDs
-├── stm32_startup.c     # Vector table and Reset_Handler (.data/.bss init)
-├── stm32_ls.ld         # Linker script (FLASH/SRAM layout, heap section)
-├── FreeRTOSConfig.h    # FreeRTOS kernel configuration
-├── Makefile
-├── build/              # Compiled output (generated)
+├── CMakeLists.txt          # Root build definition
+├── cmake/
+│   └── arm-none-eabi-gcc.cmake  # Cross-compiler toolchain file
+├── Core/
+│   ├── Inc/
+│   │   ├── main.h
+│   │   └── FreeRTOSConfig.h     # FreeRTOS kernel configuration
+│   └── Src/
+│       └── main.c               # FreeRTOS tasks and application entry point
+├── BSP/
+│   ├── Inc/
+│   │   └── led.h
+│   └── Src/
+│       └── led.c                # GPIO driver for onboard LEDs
+├── Startup/
+│   └── stm32_startup.c          # Vector table and Reset_Handler (.data/.bss init)
+├── Linker/
+│   └── stm32_ls.ld              # Linker script (FLASH/SRAM layout, heap section)
+├── build/                       # Compiled output (generated)
 └── ThirdParty/
-    └── FreeRTOS/       # FreeRTOS-Kernel (ARM_CM4F port, heap_4)
+    └── FreeRTOS/                # FreeRTOS-Kernel (ARM_CM4F port, heap_4)
 ```
