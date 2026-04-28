@@ -23,6 +23,7 @@ target_include_directories(freertos_config SYSTEM INTERFACE Core/Inc)
 target_compile_options(freertos_config INTERFACE ${CPU_FLAGS})
 
 add_subdirectory(ThirdParty/FreeRTOS)
+add_subdirectory(ThirdParty/HAL)
 add_subdirectory(BSP)
 add_subdirectory(Core)
 
@@ -43,8 +44,9 @@ add_custom_command(TARGET firmware.elf POST_BUILD
 )     
 
 add_custom_target(load
-      COMMAND openocd
-          -f /usr/share/openocd/scripts/interface/stlink-v2-1.cfg
-          -f /usr/share/openocd/scripts/target/stm32f4x.cfg
-      USES_TERMINAL
-  )
+    COMMAND openocd
+        -f /usr/share/openocd/scripts/interface/stlink-v2-1.cfg
+        -f /usr/share/openocd/scripts/target/stm32f4x.cfg
+        -c "stm32f4x.cpu configure -rtos FreeRTOS"
+    USES_TERMINAL
+)

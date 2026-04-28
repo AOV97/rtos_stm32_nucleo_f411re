@@ -1,37 +1,46 @@
 /**
  ******************************************************************************
  * @file    main.c
- * @brief   FreeRTOS LED blink demo for STM32F411RE (Nucleo-64)
+ * @brief   Circular-buffer producer/consumer demo for STM32F411RE (Nucleo-64)
  *
- * Four tasks blink the on-board LEDs at different rates using vTaskDelay,
- * which is identical in behaviour to the hand-rolled scheduler that was
- * here before — but now FreeRTOS manages context switching, stacks, and
- * timing for you.
+ * LD2 (PA5, green) is driven by a producer/consumer pair sharing a CircBuf_t:
+ *   Producer  writes ON/OFF commands every 100 ms  (10 items/sec)
+ *   Consumer  reads  one command   every 500 ms  ( 2 items/sec)
  *
- * LED pin mapping (GPIO D):
- *   GREEN  -> PD12  task1  1 Hz  (1000 ms on/off)
- *   ORANGE -> PD13  task2  1 Hz  (1000 ms on/off)
- *   BLUE   -> PD15  task3  4 Hz  ( 250 ms on/off)
- *   RED    -> PD14  task4  8 Hz  ( 125 ms on/off)
+ * The 8-slot buffer fills after ~800 ms.  Once full, the producer blocks on
+ * sem_free until the consumer frees a slot.  LD2 then blinks at the consumer
+ * rate (500 ms/toggle) instead of the faster producer rate.
  ******************************************************************************
  */
 
 #include <stdint.h>
+#include "stm32f4xx_hal.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "led.h"
+#include "cbuf.h"
 
-/* Task function prototypes */
-static void task1_handler(void *params);
-static void task2_handler(void *params);
-static void task3_handler(void *params);
-static void task4_handler(void *params);
+/* HAL_InitTick() is __weak in the HAL — we override it so HAL never
+ * reconfigures SysTick.  FreeRTOS takes ownership when vTaskStartScheduler()
+ * runs; the conflict would otherwise cause a hard fault. */
+HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
+{
+    (void)TickPriority;
+    return HAL_OK;
+}
+
+/* OpenOCD FreeRTOS thread-awareness looks for this symbol — newer FreeRTOS
+ * removed it, so we provide it manually. */
+const volatile uint32_t uxTopUsedPriority = configMAX_PRIORITIES - 1;
+
+/* Shared circular buffer — initialised in main before tasks are created */
+static CircBuf_t g_cbuf;
+
+static void producer_task(void *params);
+static void consumer_task(void *params);
 
 /* -------------------------------------------------------------------------
  * Fault handlers
- * FreeRTOS port overrides SVC_Handler, PendSV_Handler and SysTick_Handler
- * via the macros in FreeRTOSConfig.h.  The handlers below are for the
- * remaining faults; they remain as infinite loops so the debugger stops here.
  * -------------------------------------------------------------------------*/
 void HardFault_Handler(void)  { while(1); }
 void MemManage_Handler(void)  { while(1); }
@@ -39,8 +48,6 @@ void BusFault_Handler(void)   { while(1); }
 void UsageFault_Handler(void) { while(1); }
 void NMI_Handler(void)        { while(1); }
 
-/* Enable Memory Management, Bus Fault, and Usage Fault exceptions so they
- * are reported individually instead of escalating to HardFault. */
 static void enable_processor_faults(void)
 {
     uint32_t *pSHCSR = (uint32_t*)0xE000ED24;
@@ -54,73 +61,52 @@ static void enable_processor_faults(void)
  * -------------------------------------------------------------------------*/
 int main(void)
 {
-    enable_processor_faults();
+    SystemInit();
+    HAL_Init();
 
+    enable_processor_faults();
     led_init_all();
 
-    /* Create the four LED tasks.  All run at the same priority (2).
-     * configMINIMAL_STACK_SIZE (128 words = 512 bytes) is enough for these
-     * simple tasks — raise it if you add printf / heavy locals. */
-    xTaskCreate(task1_handler, "Task1", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-    xTaskCreate(task2_handler, "Task2", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-    xTaskCreate(task3_handler, "Task3", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-    xTaskCreate(task4_handler, "Task4", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+    cbuf_init(&g_cbuf);
 
-    /* Hand control to the FreeRTOS scheduler.  Does not return. */
+    xTaskCreate(producer_task, "Producer", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+    xTaskCreate(consumer_task, "Consumer", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+
     vTaskStartScheduler();
-
-    /* Should never reach here.  If it does, there was not enough heap to
-     * create the idle task — increase configTOTAL_HEAP_SIZE. */
     for(;;);
 }
 
 /* -------------------------------------------------------------------------
- * Task implementations
+ * Producer: writes ON/OFF commands at 100 ms intervals.
+ * Blocks in cbuf_write() once the 8-slot buffer is full.
  * -------------------------------------------------------------------------*/
-static void task1_handler(void *params)
+static void producer_task(void *params)
 {
     (void)params;
-    while(1)
+    uint8_t cmd = 1;
+    while (1)
     {
-        led_on(LED_GREEN);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        led_off(LED_GREEN);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        cbuf_write(&g_cbuf, cmd);
+        cmd ^= 1u;
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-static void task2_handler(void *params)
+/* -------------------------------------------------------------------------
+ * Consumer: reads one command every 500 ms (deliberately slow).
+ * Blocks in cbuf_read() when the buffer is empty.
+ * -------------------------------------------------------------------------*/
+static void consumer_task(void *params)
 {
     (void)params;
-    while(1)
+    while (1)
     {
-        led_on(LED_ORANGE);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        led_off(LED_ORANGE);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
+        uint8_t cmd = cbuf_read(&g_cbuf);
+        if (cmd)
+            led_on(LED_GREEN);
+        else
+            led_off(LED_GREEN);
 
-static void task3_handler(void *params)
-{
-    (void)params;
-    while(1)
-    {
-        led_on(LED_BLUE);
-        vTaskDelay(pdMS_TO_TICKS(250));
-        led_off(LED_BLUE);
-        vTaskDelay(pdMS_TO_TICKS(250));
-    }
-}
-
-static void task4_handler(void *params)
-{
-    (void)params;
-    while(1)
-    {
-        led_on(LED_RED);
-        vTaskDelay(pdMS_TO_TICKS(125));
-        led_off(LED_RED);
-        vTaskDelay(pdMS_TO_TICKS(125));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-add_library(core STATIC Src/main.c)
+add_library(core STATIC Src/main.c Src/cbuf.c)
 
 target_include_directories(core PUBLIC Inc)
 
