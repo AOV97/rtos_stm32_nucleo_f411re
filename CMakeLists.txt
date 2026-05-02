@@ -23,7 +23,7 @@ target_include_directories(freertos_config SYSTEM INTERFACE Core/Inc)
 target_compile_options(freertos_config INTERFACE ${CPU_FLAGS})
 
 add_subdirectory(ThirdParty/FreeRTOS)
-add_subdirectory(ThirdParty/HAL)
+add_subdirectory(ThirdParty/libopencm3)
 add_subdirectory(BSP)
 add_subdirectory(Core)
 

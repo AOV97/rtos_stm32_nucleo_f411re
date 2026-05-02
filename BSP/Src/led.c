@@ -1,28 +1,23 @@
-#include "stm32f4xx_hal.h"
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
 #include "led.h"
 
 void led_init_all(void)
 {
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-
-    GPIO_InitTypeDef gpio = {0};
-    gpio.Pin   = GPIO_PIN_5;
-    gpio.Mode  = GPIO_MODE_OUTPUT_PP;
-    gpio.Pull  = GPIO_NOPULL;
-    gpio.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &gpio);
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+    rcc_periph_clock_enable(RCC_GPIOA);
+    gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO5);
+    gpio_set_output_options(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO5);
+    gpio_clear(GPIOA, GPIO5);
 }
 
 void led_on(uint8_t led_no)
 {
     (void)led_no;
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    gpio_set(GPIOA, GPIO5);
 }
 
 void led_off(uint8_t led_no)
 {
     (void)led_no;
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+    gpio_clear(GPIOA, GPIO5);
 }

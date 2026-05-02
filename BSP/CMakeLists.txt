@@ -6,4 +6,4 @@ target_include_directories(bsp PUBLIC Inc)
 
 target_compile_options(bsp PRIVATE ${CPU_FLAGS} -std=gnu11 -Wall -O0 -g)
 
-target_link_libraries(bsp PUBLIC stm32f4xx_hal)
+target_link_libraries(bsp PUBLIC opencm3)

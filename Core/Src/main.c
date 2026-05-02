@@ -14,20 +14,11 @@
  */
 
 #include <stdint.h>
-#include "stm32f4xx_hal.h"
+#include <libopencm3/cm3/scb.h>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "led.h"
 #include "cbuf.h"
-
-/* HAL_InitTick() is __weak in the HAL — we override it so HAL never
- * reconfigures SysTick.  FreeRTOS takes ownership when vTaskStartScheduler()
- * runs; the conflict would otherwise cause a hard fault. */
-HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
-{
-    (void)TickPriority;
-    return HAL_OK;
-}
 
 /* OpenOCD FreeRTOS thread-awareness looks for this symbol — newer FreeRTOS
  * removed it, so we provide it manually. */
@@ -56,14 +47,22 @@ static void enable_processor_faults(void)
     *pSHCSR |= (1u << 18); /* UsageFault */
 }
 
+/* Enable FPU coprocessors CP10 and CP11.
+ * Must run before vTaskStartScheduler() — the CM4F port saves/restores
+ * FPU registers on every context switch and will hard-fault if CP10/11 are off. */
+static void fpu_enable(void)
+{
+    SCB_CPACR |= (3u << 20) | (3u << 22);
+    __asm volatile("dsb" ::: "memory");
+    __asm volatile("isb" ::: "memory");
+}
+
 /* -------------------------------------------------------------------------
  * main
  * -------------------------------------------------------------------------*/
 int main(void)
 {
-    SystemInit();
-    HAL_Init();
-
+    fpu_enable();
     enable_processor_faults();
     led_init_all();
 
