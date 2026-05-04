@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/arm-none-eabi-gcc.cmake)
 project(stm32RTOS C ASM)
 
+set(BOARD "stm32f411_nucleo" CACHE STRING "Target board")
 set(FREERTOS_DIR ThirdParty/FreeRTOS)
 
 # Processor/ABI flags - same as you CFLAGS, but as a list
@@ -25,6 +26,8 @@ target_compile_options(freertos_config INTERFACE ${CPU_FLAGS})
 add_subdirectory(ThirdParty/FreeRTOS)
 add_subdirectory(ThirdParty/libopencm3)
 add_subdirectory(BSP)
+add_subdirectory(HAL)
+add_subdirectory(Drivers)
 add_subdirectory(Core)
 
 add_executable(firmware.elf Startup/stm32_startup.c)

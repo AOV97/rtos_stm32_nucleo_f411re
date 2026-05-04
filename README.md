@@ -1,34 +1,30 @@
-# STM32F411RE FreeRTOS LED Blink Demo
+# STM32F411RE Bare-Metal FreeRTOS
 
 Bare-metal FreeRTOS application for the STM32F411RE Nucleo-64 board.
-Four independent tasks blink the onboard LEDs at different rates, demonstrating
-preemptive multitasking, task creation, and delay-based scheduling with FreeRTOS.
+Built without an IDE using `arm-none-eabi-gcc`, CMake, a hand-written linker script,
+and libopencm3 as the peripheral driver library.
 
-| Task   | LED    | GPIO | Rate  |
-|--------|--------|------|-------|
-| Task 1 | Green  | PD12 | 1 Hz  |
-| Task 2 | Orange | PD13 | 1 Hz  |
-| Task 3 | Blue   | PD15 | 4 Hz  |
-| Task 4 | Red    | PD14 | 8 Hz  |
-
-Built from scratch without an IDE using `arm-none-eabi-gcc`, a hand-written linker
-script, and a custom startup file. FreeRTOS handles context switching via the
-Cortex-M4 SysTick and PendSV exceptions.
+**Current demo — circular buffer producer/consumer:**
+A producer task writes ON/OFF commands every 100 ms into an 8-slot circular buffer.
+A consumer task reads one command every 500 ms and drives LD2 (PA5) accordingly.
+The buffer fills after ~800 ms, after which the producer blocks until the consumer
+frees a slot. LD2 then blinks at the consumer rate (500 ms) instead of the producer rate.
 
 ---
 
 ## Requirements
 
-- `arm-none-eabi-gcc` — ARM cross-compiler
-- `cmake` — build system (3.20+)
-- `make` — build tool
-- `openocd` — on-chip debugger
-- `stlink-tools` — ST-Link utilities
-- `gdb-multiarch` — debugger
-
 ```bash
-sudo apt install gcc-arm-none-eabi cmake make openocd stlink-tools gdb-multiarch
+sudo apt install gcc-arm-none-eabi cmake make openocd gdb-multiarch
 ```
+
+| Tool | Purpose |
+|------|---------|
+| `arm-none-eabi-gcc` | ARM bare-metal cross-compiler |
+| `cmake` (3.20+) | Build system |
+| `make` | Build backend |
+| `openocd` | On-chip debugger / flash programmer |
+| `gdb-multiarch` | Debugger with ARM support |
 
 ---
 
@@ -36,43 +32,51 @@ sudo apt install gcc-arm-none-eabi cmake make openocd stlink-tools gdb-multiarch
 
 ```bash
 mkdir build && cd build
-cmake ..
+cmake .. -G "Unix Makefiles"
 make -j$(nproc)          # produces build/firmware.elf
+```
+
+To build for a different board:
+
+```bash
+cmake .. -G "Unix Makefiles" -DBOARD=custom_pcb
 ```
 
 ---
 
-## Flash & Debug
+## Flash
 
 **Terminal 1 — start OpenOCD (keep it running):**
+
 ```bash
 make load
 ```
 
 **Terminal 2 — connect GDB, flash, and run:**
+
 ```bash
 gdb-multiarch build/firmware.elf
-(gdb) target extended-remote localhost:3333
-(gdb) monitor reset halt
+(gdb) target remote localhost:3333
 (gdb) load
 (gdb) monitor reset halt
 (gdb) continue
 ```
 
-Press `Ctrl+C` in GDB to pause execution at any time.
-
 ---
 
-## Useful GDB Commands
+## Debug — FreeRTOS thread awareness
+
+OpenOCD is configured with `-c "stm32f4x.cpu configure -rtos FreeRTOS"` in the `load`
+target, so GDB can inspect individual tasks.
 
 ```
-print pxCurrentTCB->pcTaskName   # name of the currently running task
-info locals                       # local variables in current frame
-bt                                # call stack (backtrace)
-break task1_handler               # set a breakpoint
-next                              # step over
-step                              # step into
-continue                          # resume
+Ctrl+C                                  # halt the running firmware
+(gdb) info threads                      # list all FreeRTOS tasks + state
+(gdb) thread 2                          # switch to a task
+(gdb) bt                                # show its call stack
+(gdb) print g_cbuf                      # inspect the circular buffer
+(gdb) x/8ub g_cbuf.data                 # dump buffer contents
+(gdb) print uxQueueMessagesWaiting(g_cbuf.sem_free)   # semaphore count
 ```
 
 ---
@@ -81,25 +85,34 @@ continue                          # resume
 
 ```
 workspace/
-├── CMakeLists.txt          # Root build definition
-├── cmake/
-│   └── arm-none-eabi-gcc.cmake  # Cross-compiler toolchain file
-├── Core/
+├── BSP/                          # Board Support Package
+│   ├── stm32f411_nucleo/
+│   │   └── platform_config.h    # pin/bus assignments for this board
+│   ├── Inc/led.h
+│   ├── Src/led.c
+│   └── CMakeLists.txt
+├── Core/                         # Application tasks and logic
 │   ├── Inc/
-│   │   ├── main.h
-│   │   └── FreeRTOSConfig.h     # FreeRTOS kernel configuration
+│   │   ├── FreeRTOSConfig.h
+│   │   ├── cbuf.h
+│   │   └── main.h
 │   └── Src/
-│       └── main.c               # FreeRTOS tasks and application entry point
-├── BSP/
-│   ├── Inc/
-│   │   └── led.h
-│   └── Src/
-│       └── led.c                # GPIO driver for onboard LEDs
+│       ├── main.c
+│       └── cbuf.c
+├── Drivers/                      # Portable device drivers (scaffolded)
+├── HAL/                          # libopencm3 peripheral wrappers (scaffolded)
 ├── Startup/
-│   └── stm32_startup.c          # Vector table and Reset_Handler (.data/.bss init)
+│   └── stm32_startup.c           # Vector table and Reset_Handler
 ├── Linker/
-│   └── stm32_ls.ld              # Linker script (FLASH/SRAM layout, heap section)
-├── build/                       # Compiled output (generated)
-└── ThirdParty/
-    └── FreeRTOS/                # FreeRTOS-Kernel (ARM_CM4F port, heap_4)
+│   └── stm32_ls.ld               # Flash/SRAM layout for STM32F411RE
+├── cmake/
+│   └── arm-none-eabi-gcc.cmake   # CMake cross-compiler toolchain file
+├── ThirdParty/
+│   ├── FreeRTOS/                 # FreeRTOS-Kernel (ARM_CM4F port, heap_4)
+│   ├── libopencm3/               # Peripheral driver library
+│   └── CMSIS/                    # ARM Cortex-M4 core headers (used by FreeRTOS port)
+└── build/                        # Compiled output (generated — do not edit)
 ```
+
+See `PROJECT_STRUCTURE.md` for a detailed explanation of every directory and
+`ARCHITECTURE.md` for the layering rules.

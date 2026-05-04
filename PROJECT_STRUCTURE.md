@@ -29,6 +29,8 @@ firmware.elf
     └── → links freertos_kernel_port, opencm3 headers via freertos_config
 ```
 
+`HAL` and `Drivers` are scaffolded but not yet linked — they will be added to this graph as peripherals and device drivers are implemented.
+
 ---
 
 ## Directory reference
@@ -81,8 +83,6 @@ The very first code that runs when the chip comes out of reset. It does three th
 
 `stm32_startup.c` is compiled directly into `firmware.elf` in the top-level `CMakeLists.txt` (`add_executable(firmware.elf Startup/stm32_startup.c)`), not as a separate library, so it is always linked in first.
 
-> Note: `Startup/CMakeLists.txt` exists but is not used by the current build — it is a leftover from an earlier experiment.
-
 ---
 
 ### `Core/`
@@ -103,26 +103,59 @@ This is the application layer — your code.
 
 **`FreeRTOSConfig.h`** is the FreeRTOS configuration header. Every FreeRTOS project must supply one. It sets the CPU clock frequency (16 MHz HSI), tick rate (1000 Hz), heap size (24 KB), interrupt priority levels, and which optional FreeRTOS features are compiled in. FreeRTOS reads this file via the `freertos_config` CMake interface library defined in the top-level `CMakeLists.txt`.
 
-**`main.h`** holds miscellaneous constants. Most of these are leftovers from an earlier hand-rolled scheduler experiment and are not actively used by the FreeRTOS build.
+**`main.h`** holds miscellaneous constants shared across the application.
 
 ---
 
 ### `BSP/`
 
-**Contains:** `led.c`, `led.h`
+**Contains:** `led.c`, `led.h`, `stm32f411_nucleo/platform_config.h`
 
 **CMake target:** `bsp` → `build/BSP/libbsp.a`
 
 BSP stands for Board Support Package. It is the hardware abstraction layer specific to the Nucleo-64 board — code that knows which GPIO pin the LED is on, so that `Core/` does not have to.
 
-`led.c` uses libopencm3 to:
+**`stm32f411_nucleo/platform_config.h`** is the single file that maps logical names to physical pins and peripherals for this board. `led.c` includes it and uses `LED_PORT` / `LED_PIN` instead of hardcoded register names, so moving to a different board only requires a new `platform_config.h`.
+
+```c
+#define LED_PORT    GPIOA
+#define LED_PIN     GPIO5
+```
+
+**`led.c`** uses libopencm3 to:
 - Enable the GPIOA peripheral clock (`rcc_periph_clock_enable`).
-- Configure PA5 as a push-pull output (`gpio_mode_setup`, `gpio_set_output_options`).
+- Configure `LED_PORT` / `LED_PIN` as a push-pull output.
 - Drive it high or low (`gpio_set` / `gpio_clear`).
 
-If you ever moved to a different board, only this directory would need to change.
-
 `bsp` links `opencm3` as `PUBLIC`, which means the libopencm3 include directories and the `STM32F4` compile definition automatically propagate to `core` (which links `bsp`). That is why `main.c` can include `<libopencm3/cm3/scb.h>` without `Core/CMakeLists.txt` explicitly mentioning libopencm3.
+
+The CMake `BOARD` variable (default: `stm32f411_nucleo`) selects which board subfolder is added to the include path. To target a different board:
+
+```sh
+cmake -DBOARD=custom_pcb ..
+```
+
+---
+
+### `HAL/`
+
+**Status:** scaffolded — no source files yet.
+
+**Planned CMake target:** `hal` → `build/HAL/libhal.a`
+
+This layer will contain thin wrappers around libopencm3 peripheral APIs: `hal_spi`, `hal_i2c`, `hal_uart`, etc. The HAL exposes generic `spi_transfer()` / `i2c_write()` style calls so that `Drivers/` above it never references libopencm3 types or register names directly.
+
+The HAL is intentionally RTOS-unaware. It performs a single synchronous transaction and returns — any blocking or mutex logic belongs in the driver above it.
+
+---
+
+### `Drivers/`
+
+**Status:** scaffolded — no source files yet.
+
+**Planned layout:** one subdirectory per device (`sd_card/`, `oled/`, `bmp388/`, `neo6m/`), each with its own `CMakeLists.txt`.
+
+Drivers implement device-specific protocol (reading BMP388 registers, writing OLED framebuffer, etc.) using HAL calls. They know the device's data format but not which physical pin or bus it is connected to — that comes from `platform_config.h`.
 
 ---
 
@@ -146,7 +179,7 @@ The FreeRTOS-Kernel source, cloned from GitHub. CMake builds it using FreeRTOS's
 
 The ARM CMSIS Core headers (`core_cm4.h`, `cmsis_gcc.h`, etc.). These are not used by your application code directly; they are used internally by the FreeRTOS ARM_CM4F port for Cortex-M intrinsics like `__get_BASEPRI()`, `__set_BASEPRI()`, and `__DSB()`.
 
-libopencm3 does not use CMSIS, but FreeRTOS does, so this directory must remain even though the HAL is gone.
+libopencm3 does not use CMSIS, but FreeRTOS does, so this directory must remain.
 
 #### `ThirdParty/libopencm3/`
 
@@ -176,8 +209,8 @@ To do a clean rebuild: `rm -rf build/* && cmake .. -G "Unix Makefiles" && make`.
 
 | File | Purpose |
 |---|---|
-| `CMakeLists.txt` | Top-level CMake entry point. Defines CPU flags, FreeRTOS options, links all subdirectories, and defines the final `firmware.elf` link step and `load` target (OpenOCD flash). |
+| `CMakeLists.txt` | Top-level CMake entry point. Defines CPU flags, `BOARD` variable, FreeRTOS options, links all subdirectories, and defines the `firmware.elf` link step and `load` target (OpenOCD). |
 | `Linker/stm32_ls.ld` | Canonical linker script used by the CMake build. |
-| `Makefile` | **Legacy** — the original hand-rolled build system from before CMake was introduced. No longer used; kept for reference. |
-| `main.s` | **Legacy** — an early assembly experiment. Not part of the build. |
-| `SESSION_2025-04-27.md` | Session notes from when HAL and the circular buffer demo were set up. |
+| `ARCHITECTURE.md` | Layering rules: how Core, Drivers, HAL, and BSP relate to each other. |
+| `PROJECT_STRUCTURE.md` | This file — directory-by-directory reference. |
+| `README.md` | Quick-start: build, flash, and debug instructions. |

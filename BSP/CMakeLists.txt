@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
-add_library(bsp STATIC Src/led.c)
+add_library(bsp STATIC Src/bsp.c Src/led.c)
 
-target_include_directories(bsp PUBLIC Inc)
+target_include_directories(bsp PUBLIC
+    Inc
+    ${CMAKE_SOURCE_DIR}/BSP/${BOARD}
+)
 
 target_compile_options(bsp PRIVATE ${CPU_FLAGS} -std=gnu11 -Wall -O0 -g)
 

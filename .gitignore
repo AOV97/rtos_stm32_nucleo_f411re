@@ -1,2 +1,5 @@
 build/
 Makefile
+.claude/
+ARCHITECTURE.md
+PROJECT_STRUCTURE.md
