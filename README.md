@@ -47,7 +47,7 @@ cmake .. -G "Unix Makefiles" -DBOARD=custom_pcb
 ## Flash
 
 **Terminal 1 — start OpenOCD (keep it running):**
-
+targ
 ```bash
 make load
 ```

@@ -30,6 +30,10 @@ SECTIONS
         _edata = .;
     } > SRAM AT> FLASH
 
+    /* Actual flash address where .data is stored — may differ from _etext
+     * if the linker inserts ARM interworking sections between .text and .data */
+    _la_data = LOADADDR(.data);
+
     /* ---- Zero-initialised globals in SRAM ---- */
     .bss :
     {
@@ -41,13 +45,4 @@ SECTIONS
         _ebss = .;
     } > SRAM
 
-    /* ---- FreeRTOS heap (heap_4.c uses this region via ucHeap[]) ---- */
-    /* configTOTAL_HEAP_SIZE in FreeRTOSConfig.h must match the size here  */
-    .heap (NOLOAD) :
-    {
-        . = ALIGN(8);
-        _heap_start = .;
-        . = . + 0x6000;   /* 24 KB */
-        _heap_end = .;
-    } > SRAM
 }

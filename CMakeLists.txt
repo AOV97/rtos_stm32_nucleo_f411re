@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/arm-none-eabi-gcc.cmake)
 project(stm32RTOS C ASM)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(BOARD "stm32f411_nucleo" CACHE STRING "Target board")
 set(FREERTOS_DIR ThirdParty/FreeRTOS)
 
@@ -32,7 +34,7 @@ add_subdirectory(Core)
 
 add_executable(firmware.elf Startup/stm32_startup.c)
 target_compile_options(firmware.elf PRIVATE ${CPU_FLAGS} -std=gnu11 -O0 -g)
-target_link_libraries(firmware.elf PRIVATE core bsp freertos_kernel)
+target_link_libraries(firmware.elf PRIVATE core sd_card hal bsp freertos_kernel c)
 target_link_options(firmware.elf PRIVATE
     ${CPU_FLAGS}
     -nostdlib                                                                                         

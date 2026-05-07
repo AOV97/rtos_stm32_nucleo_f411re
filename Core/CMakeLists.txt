@@ -5,10 +5,11 @@ add_library(core STATIC
     Src/cbuf.c
     Src/tasks/producer_task.c
     Src/tasks/consumer_task.c
+    Src/tasks/sd_task.c
 )
 
 target_include_directories(core PUBLIC Inc)
 
 target_compile_options(core PRIVATE ${CPU_FLAGS} -std=gnu11 -Wall -O0 -g)
 
-target_link_libraries(core PUBLIC freertos_kernel bsp)
+target_link_libraries(core PUBLIC freertos_kernel bsp sd_card)
