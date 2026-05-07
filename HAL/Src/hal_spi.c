@@ -63,6 +63,12 @@ void hal_spi_init(HAL_SPI_Handle *handle, const HAL_SPI_Config *config)
     gpio_set_output_options(handle->gpio_port, GPIO_OTYPE_PP,
                             GPIO_OSPEED_50MHZ, output_pins);
 
+    /* CS pin — software-managed, push-pull output, idle high */
+    gpio_mode_setup(handle->cs_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, handle->cs_pin);
+    gpio_set_output_options(handle->cs_port, GPIO_OTYPE_PP,
+                            GPIO_OSPEED_2MHZ, handle->cs_pin);
+    gpio_set(handle->cs_port, handle->cs_pin);
+
     /* 3. SPI peripheral
      *    mode encodes CPOL (bit 1) and CPHA (bit 0) — see spi_init_master docs.
      *    Software NSS: we manage CS ourselves in the driver; tell the peripheral
@@ -84,6 +90,20 @@ void hal_spi_init(HAL_SPI_Handle *handle, const HAL_SPI_Config *config)
      *    Any ISR that calls a FreeRTOS API must have priority >= configMAX_SYSCALL_INTERRUPT_PRIORITY.
      *    Default NVIC priority is 0 (highest), which is above that ceiling and unsafe. */
     nvic_enable_irq(handle->nvic_rx_irq);
+}
+
+/* -------------------------------------------------------------------------
+ * hal_spi_cs_assert / hal_spi_cs_deassert
+ * ------------------------------------------------------------------------- */
+
+void hal_spi_cs_assert(HAL_SPI_Handle *handle)
+{
+    gpio_clear(handle->cs_port, handle->cs_pin);
+}
+
+void hal_spi_cs_deassert(HAL_SPI_Handle *handle)
+{
+    gpio_set(handle->cs_port, handle->cs_pin);
 }
 
 /* -------------------------------------------------------------------------

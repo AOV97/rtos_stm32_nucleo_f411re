@@ -30,6 +30,10 @@ typedef struct {
     uint16_t     gpio_mosi;
     uint8_t      gpio_af;
 
+    /* Chip-select pin — configured as output by hal_spi_init(), idle high */
+    uint32_t     cs_port;
+    uint16_t     cs_pin;
+
     /* DMA routing — from the chip reference manual */
     uint32_t     dma;
     uint8_t      tx_stream;
@@ -42,10 +46,14 @@ typedef struct {
 } HAL_SPI_Handle;
 
 /*
- * Set up clocks, GPIO alternate functions, the SPI peripheral, and DMA.
- * Call once before any transfers.
+ * Set up clocks, GPIO alternate functions, the SPI peripheral, DMA, and the
+ * CS pin (output, idle high). Call before any transfers.
  */
 void hal_spi_init(HAL_SPI_Handle *handle, const HAL_SPI_Config *config);
+
+/* Assert / deassert chip select (active low). */
+void hal_spi_cs_assert(HAL_SPI_Handle *handle);
+void hal_spi_cs_deassert(HAL_SPI_Handle *handle);
 
 /*
  * Blocking full-duplex transfer: sends `len` bytes from `tx` while receiving

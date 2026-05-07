@@ -1,8 +1,6 @@
 #include "sd_card.h"
 #include "hal_spi.h"
 #include "platform_config.h"
-#include <libopencm3/stm32/rcc.h>
-#include <libopencm3/stm32/gpio.h>
 #include <string.h>
 #include <FreeRTOS.h>
 #include <task.h>
@@ -18,6 +16,8 @@ static HAL_SPI_Handle sd_spi = {
     .gpio_miso   = SD_SPI_MISO_PIN,
     .gpio_mosi   = SD_SPI_MOSI_PIN,
     .gpio_af     = SD_SPI_GPIO_AF,
+    .cs_port     = SD_SPI_PORT,
+    .cs_pin      = SD_SPI_CS_PIN,
     .dma         = SD_SPI_DMA,
     .tx_stream   = SD_SPI_TX_STREAM,
     .rx_stream   = SD_SPI_RX_STREAM,
@@ -27,21 +27,6 @@ static HAL_SPI_Handle sd_spi = {
 
 static bool sd_initialized = false;
 static bool sd_is_sdhc = false;     /* true = block addressing, false = byte addressing */
-
-/* -------------------------------------------------------------------------
- * CS helpers — driver owns the chip select, HAL does not touch it
- * ------------------------------------------------------------------------- */
-
-static void cs_init(void)
-{
-    rcc_periph_clock_enable(RCC_GPIOA);
-    gpio_mode_setup(SD_SPI_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SD_SPI_CS_PIN);
-    gpio_set_output_options(SD_SPI_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, SD_SPI_CS_PIN);
-    gpio_set(SD_SPI_PORT, SD_SPI_CS_PIN);   /* CS idle high */
-}
-
-static inline void cs_low(void)  { gpio_clear(SD_SPI_PORT, SD_SPI_CS_PIN); }
-static inline void cs_high(void) { gpio_set(SD_SPI_PORT, SD_SPI_CS_PIN); }
 
 /* One dummy byte — SD cards need a clock between CS edges to recover */
 static void spi_dummy(void)
@@ -111,36 +96,34 @@ static SD_Result wait_for_byte(uint8_t target, uint32_t timeout_ms)
 
 SD_Result sd_init(void)
 {
-    cs_init();
-
     /* --- Phase 1: slow clock for init (≤400 kHz) ---
      * APB2 = 16 MHz (HSI), DIV256 = 62.5 kHz */
     HAL_SPI_Config slow = { .clock_div = SPI_CR1_BAUDRATE_FPCLK_DIV_256, .mode = 0 };
-    hal_spi_init(&sd_spi, &slow);
+    hal_spi_init(&sd_spi, &slow);   /* configures SPI and CS (idle high) */
 
     /* 74+ clock pulses with CS=HIGH to wake the card */
     uint8_t wake[10];
     memset(wake, 0xFF, sizeof(wake));
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     hal_spi_transfer(&sd_spi, wake, NULL, sizeof(wake));
 
     /* CMD0: reset into SPI mode. CRC 0x4A (pre-computed for CMD0+arg=0) */
-    cs_low();
+    hal_spi_cs_assert(&sd_spi);
     send_cmd(0, 0x00000000, 0x4A);
     uint8_t r1 = read_r1();
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     spi_dummy();
     if (r1 != 0x01) return SD_ERROR;
 
     /* CMD8: check voltage range and confirm SD v2.
      * Argument: VHS=1 (2.7–3.6 V) | check pattern=0xAA
      * CRC 0x43 (pre-computed for CMD8 + this argument) */
-    cs_low();
+    hal_spi_cs_assert(&sd_spi);
     send_cmd(8, 0x000001AA, 0x43);
     r1 = read_r1();
     uint8_t r7[4];
     hal_spi_transfer(&sd_spi, NULL, r7, 4);
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     spi_dummy();
     if (r1 != 0x01)             return SD_ERROR;
     if (r7[2] != 0x01)          return SD_ERROR;    /* voltage range rejected */
@@ -152,16 +135,16 @@ SD_Result sd_init(void)
      * Loop up to 1 second — most cards finish in <100 ms. */
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
     do {
-        cs_low();
+        hal_spi_cs_assert(&sd_spi);
         send_cmd(55, 0x00000000, 0xFF);     /* CMD55: next cmd is application cmd */
         r1 = read_r1();
-        cs_high();
+        hal_spi_cs_deassert(&sd_spi);
         spi_dummy();
 
-        cs_low();
+        hal_spi_cs_assert(&sd_spi);
         send_cmd(41, 0x40000000, 0xFF);     /* ACMD41: init, HCS=1 */
         r1 = read_r1();
-        cs_high();
+        hal_spi_cs_deassert(&sd_spi);
         spi_dummy();
 
         if (r1 == 0x00) break;              /* 0x00 = ready */
@@ -173,12 +156,12 @@ SD_Result sd_init(void)
     /* CMD58: read OCR register. Check the CCS bit (bit 30) to detect SDHC.
      * CCS=1 → block addressing (modern cards).
      * CCS=0 → byte addressing (old <2 GB SDSC cards). */
-    cs_low();
+    hal_spi_cs_assert(&sd_spi);
     send_cmd(58, 0x00000000, 0xFF);
     r1 = read_r1();
     uint8_t ocr[4];
     hal_spi_transfer(&sd_spi, NULL, ocr, 4);
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     spi_dummy();
     if (r1 != 0x00) return SD_ERROR;
     sd_is_sdhc = (ocr[0] & 0x40) != 0;
@@ -209,14 +192,14 @@ SD_Result sd_read_block(uint32_t block, uint8_t *buf)
 
     uint32_t addr = sd_is_sdhc ? block : block * 512;
 
-    cs_low();
+    hal_spi_cs_assert(&sd_spi);
     send_cmd(17, addr, 0xFF);
     uint8_t r1 = read_r1();
-    if (r1 != 0x00) { cs_high(); spi_dummy(); return SD_ERROR; }
+    if (r1 != 0x00) { hal_spi_cs_deassert(&sd_spi); spi_dummy(); return SD_ERROR; }
 
     /* Data token 0xFE arrives before the actual data — wait up to 200 ms */
     if (wait_for_byte(0xFE, 200) != SD_OK) {
-        cs_high();
+        hal_spi_cs_deassert(&sd_spi);
         spi_dummy();
         return SD_TIMEOUT;
     }
@@ -226,7 +209,7 @@ SD_Result sd_read_block(uint32_t block, uint8_t *buf)
     uint8_t crc[2];
     hal_spi_transfer(&sd_spi, NULL, crc, 2);    /* discard CRC */
 
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     spi_dummy();
     return SD_OK;
 }
@@ -249,10 +232,10 @@ SD_Result sd_write_block(uint32_t block, const uint8_t *buf)
 
     uint32_t addr = sd_is_sdhc ? block : block * 512;
 
-    cs_low();
+    hal_spi_cs_assert(&sd_spi);
     send_cmd(24, addr, 0xFF);
     uint8_t r1 = read_r1();
-    if (r1 != 0x00) { cs_high(); spi_dummy(); return SD_ERROR; }
+    if (r1 != 0x00) { hal_spi_cs_deassert(&sd_spi); spi_dummy(); return SD_ERROR; }
 
     spi_dummy();                                /* 1 byte gap required before data */
 
@@ -266,16 +249,16 @@ SD_Result sd_write_block(uint32_t block, const uint8_t *buf)
     /* Data response: bits [4:1] = 0b0101 means accepted */
     uint8_t resp;
     hal_spi_transfer(&sd_spi, NULL, &resp, 1);
-    if ((resp & 0x1F) != 0x05) { cs_high(); spi_dummy(); return SD_ERROR; }
+    if ((resp & 0x1F) != 0x05) { hal_spi_cs_deassert(&sd_spi); spi_dummy(); return SD_ERROR; }
 
     /* Wait while card programs the flash — up to 500 ms */
     if (wait_for_byte(0xFF, 500) != SD_OK) {
-        cs_high();
+        hal_spi_cs_deassert(&sd_spi);
         spi_dummy();
         return SD_TIMEOUT;
     }
 
-    cs_high();
+    hal_spi_cs_deassert(&sd_spi);
     spi_dummy();
     return SD_OK;
 }
