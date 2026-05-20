@@ -32,7 +32,7 @@ add_subdirectory(HAL)
 add_subdirectory(Drivers)
 add_subdirectory(Core)
 
-add_executable(firmware.elf Startup/stm32_startup.c)
+add_executable(firmware.elf Startup/stm32_startup.c Core/Src/syscalls.c)
 target_compile_options(firmware.elf PRIVATE ${CPU_FLAGS} -std=gnu11 -O0 -g)
 target_link_libraries(firmware.elf PRIVATE core sd_card hal bsp freertos_kernel c)
 target_link_options(firmware.elf PRIVATE
