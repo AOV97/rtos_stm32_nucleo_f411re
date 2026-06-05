@@ -15,13 +15,40 @@ typedef struct {
     SemaphoreHandle_t sem_used;   /* counts used slots:  init = 0         */
 } CircBuf_t;
 
-/* Must be called once before any task uses the buffer. */
-void    cbuf_init(CircBuf_t *cb);
+/**
+ * @brief Initializes a circular buffer and creates its two counting semaphores.
+ *
+ * Sets head and tail to zero, creates sem_free (initial count = CBUF_SIZE) and
+ * sem_used (initial count = 0). Must be called once from a task or before the
+ * scheduler starts, before cbuf_write or cbuf_read are used.
+ *
+ * @param cb  Pointer to an uninitialized CircBuf_t to set up.
+ */
+void cbuf_init(CircBuf_t *cb);
 
-/* Block until a free slot is available, then write val. */
-void    cbuf_write(CircBuf_t *cb, uint8_t val);
+/**
+ * @brief Blocks until a free slot is available, then writes one byte.
+ *
+ * Takes sem_free (blocks if the buffer is full), writes val at the current
+ * head index, advances head with wrap-around, then gives sem_used to wake
+ * any waiting consumer. Safe to call from exactly one producer task.
+ *
+ * @param cb   Pointer to an initialized CircBuf_t.
+ * @param val  Byte value to enqueue.
+ */
+void cbuf_write(CircBuf_t *cb, uint8_t val);
 
-/* Block until an item is available, then return it. */
+/**
+ * @brief Blocks until an item is available, then returns it.
+ *
+ * Takes sem_used (blocks if the buffer is empty), reads the byte at the
+ * current tail index, advances tail with wrap-around, then gives sem_free
+ * to wake any waiting producer. Safe to call from exactly one consumer task.
+ *
+ * @param cb  Pointer to an initialized CircBuf_t.
+ *
+ * @return The next byte dequeued from the buffer.
+ */
 uint8_t cbuf_read(CircBuf_t *cb);
 
 #endif /* CBUF_H */

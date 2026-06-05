@@ -5,6 +5,7 @@ add_library(bsp STATIC Src/bsp.c Src/led.c)
 target_include_directories(bsp PUBLIC
     Inc
     ${CMAKE_SOURCE_DIR}/BSP/${BOARD}
+    ${CMAKE_SOURCE_DIR}/HAL/Inc
 )
 
 target_compile_options(bsp PRIVATE ${CPU_FLAGS} -std=gnu11 -Wall -O0 -g)

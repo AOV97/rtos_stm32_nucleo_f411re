@@ -1,5 +1,7 @@
 #include <libopencm3/cm3/scb.h>
 #include "bsp.h"
+#include "platform_config.h"
+#include "hal_i2c.h"
 
 static void fpu_enable(void)
 {
@@ -20,4 +22,16 @@ void bsp_init(void)
 {
     fpu_enable();
     enable_processor_faults();
+}
+
+void bsp_oled_i2c_init(HAL_I2C_Handle *out)
+{
+    *out = (HAL_I2C_Handle){
+        .i2c       = OLED_I2C,
+        .gpio_port = OLED_I2C_PORT,
+        .gpio_scl  = OLED_I2C_SCL,
+        .gpio_sda  = OLED_I2C_SDA,
+        .gpio_af   = OLED_I2C_AF,
+    };
+    hal_i2c_init(out);
 }

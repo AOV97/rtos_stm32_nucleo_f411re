@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 add_library(hal STATIC
     Src/hal_spi.c
+    Src/hal_i2c.c
 )
 
 target_include_directories(hal PUBLIC Inc)

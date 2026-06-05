@@ -3,6 +3,7 @@
 #include "task.h"
 #include "bsp.h"
 #include "logger.h"
+#include "tasks/oled_task.h"
 
 /* OpenOCD FreeRTOS thread-awareness looks for this symbol — newer FreeRTOS
  * removed it, so we provide it manually. */
@@ -14,6 +15,7 @@ int main(void)
     logger_init();
 
     xTaskCreate(logger_task, "Logger", configMINIMAL_STACK_SIZE * 4, NULL, 1, NULL);
+    xTaskCreate(oled_task,   "OLED",   configMINIMAL_STACK_SIZE * 4, NULL, 1, NULL);
 
     LOG_DEBUG("Main", "System initialized, starting scheduler");
     LOG_INFO("Main", "FreeRTOS version: %s", tskKERNEL_VERSION_NUMBER);

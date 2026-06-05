@@ -4,6 +4,7 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
 #include <libopencm3/stm32/dma.h>
+#include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/f4/nvic.h>
 
 /* Onboard user LED — LD2 on PA5 */
@@ -27,5 +28,13 @@
 #define SD_SPI_RX_STREAM    DMA_STREAM0
 #define SD_SPI_DMA_CHANNEL  DMA_SxCR_CHSEL_3
 #define SD_SPI_RX_NVIC_IRQ  NVIC_DMA2_STREAM0_IRQ
+
+/* OLED display — I2C1 on PB8 (SCL) / PB9 (SDA) */
+#define OLED_I2C          I2C1
+#define OLED_I2C_PORT     GPIOB
+#define OLED_I2C_SCL      GPIO8
+#define OLED_I2C_SDA      GPIO9
+#define OLED_I2C_AF       GPIO_AF4
+#define OLED_I2C_ADDR     0x3C
 
 #endif /* PLATFORM_CONFIG_H_ */
